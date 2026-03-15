@@ -100,6 +100,17 @@ Over **N=10 seeds** (`40..49`), epochs=40, selecting best checkpoint by **valid 
 - **VALID** mean±std: `0.810100 ± 0.010479`
 - **TEST@best-valid** mean±std: `0.762974 ± 0.022686`
 
+Optional: ensemble the same 10 checkpoints (avg logits):
+- Ensemble **VALID** ROC-AUC: `0.832424`
+- Ensemble **TEST** ROC-AUC: `0.795141`
+
+```bash
+mamba run -n GraphLink python scripts/ensemble_eval.py \
+  --root data/ogbg-molhiv \
+  --ckpt_glob 'models/ginv2_ogbg-molhiv_finalv1_seed*_mean_onecycle_e40_best.pt' \
+  --avg logits --split both
+```
+
 Reproduce:
 ```bash
 cd /srv/work/MolHIV

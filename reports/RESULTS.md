@@ -38,3 +38,12 @@ Top-by-valid (from this final v1 batch):
 - `seed48`: best val `0.821802` (epoch 21), test@best `0.772717`
 - `seed40`: best val `0.820308` (epoch 24), test@best `0.784739`
 - `seed46`: best val `0.818808` (epoch 17), test@best `0.753754`
+
+### Ensemble (Same 10 Checkpoints)
+
+If we ensemble the **10 best checkpoints** from `finalv1_seed40..49` by averaging logits:
+- Ensemble VALID ROC-AUC: `0.832424`
+- Ensemble TEST ROC-AUC: `0.795141`
+
+Command:
+`mamba run -n GraphLink python scripts/ensemble_eval.py --ckpt_glob 'models/ginv2_ogbg-molhiv_finalv1_seed*_mean_onecycle_e40_best.pt' --avg logits`
