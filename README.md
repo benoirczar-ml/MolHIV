@@ -91,3 +91,27 @@ mamba run -n GraphLink python src/gin_v2_atom_bond_vn.py \
 ## Results (Local Runs)
 
 See `reports/RESULTS.md` for a compact table of tracked runs.
+
+### Final v1 (Leaderboard-Style Summary)
+
+Configuration: **GINv2 (Atom/Bond categorical encoders) + Virtual Node + pool=mean + OneCycleLR**.
+
+Over **N=10 seeds** (`40..49`), epochs=40, selecting best checkpoint by **valid ROC-AUC**:
+- **VALID** mean±std: `0.810100 ± 0.010479`
+- **TEST@best-valid** mean±std: `0.762974 ± 0.022686`
+
+Reproduce:
+```bash
+cd /srv/work/MolHIV
+git checkout exp/scheduler
+for s in 40 41 42 43 44 45 46 47 48 49; do
+  mamba run -n GraphLink python src/gin_v2_atom_bond_vn.py \
+    --root data/ogbg-molhiv --epochs 40 --batch_size 256 \
+    --hidden 256 --num_layers 5 --head_layers 2 --dropout 0.1 \
+    --pool mean --lr 0.001 --weight_decay 0.0001 --virtual_node \
+    --sched onecycle --onecycle_pct_start 0.1 --onecycle_div_factor 10 --onecycle_final_div_factor 100 \
+    --seed $s --eval_every 1 --save_every 1 --num_workers 4 --log_vram \
+    --run_tag finalv1_seed${s}_mean_onecycle_e40 \
+    | tee runs/finalv1_seed${s}_mean_onecycle_e40.log
+done
+```

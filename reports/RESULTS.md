@@ -21,3 +21,20 @@ We treat this as the current best configuration for this repo:
 Seed variability (same config, 60 epochs):
 - `seed42`: best val `0.812950` (epoch 19)
 - `seed44`: best val `0.807347` (epoch 29)
+
+## Final v1 (Leaderboard-Style)
+
+Protocol:
+- Configuration: **GINv2 + Virtual Node + pool=mean + OneCycle**
+- Selection: best checkpoint by **valid ROC-AUC**
+- Seeds: `40..49`
+- Epochs: `40`
+
+Aggregate over N=10:
+- **VALID (best-valid ROC-AUC)**: mean `0.810100`, std `0.010479`
+- **TEST@best-valid**: mean `0.762974`, std `0.022686`
+
+Top-by-valid (from this final v1 batch):
+- `seed48`: best val `0.821802` (epoch 21), test@best `0.772717`
+- `seed40`: best val `0.820308` (epoch 24), test@best `0.784739`
+- `seed46`: best val `0.818808` (epoch 17), test@best `0.753754`
