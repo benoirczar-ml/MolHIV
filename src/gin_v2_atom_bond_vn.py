@@ -238,6 +238,72 @@ def scan_cardinals(ds: PygGraphPropPredDataset) -> tuple[list[int], list[int] | 
     return node_card, edge_card
 
 
+def build_scheduler(
+    args: argparse.Namespace,
+    optim: torch.optim.Optimizer,
+    steps_per_epoch: int,
+) -> tuple[torch.optim.lr_scheduler._LRScheduler | None, str]:
+    """
+    Return (scheduler, step_mode).
+    step_mode: "batch" | "epoch" | "epoch_metric"
+    """
+    if args.sched == "none":
+        return None, "epoch"
+
+    if args.sched == "cosine":
+        warm = int(args.warmup_epochs)
+        total = int(args.epochs)
+        if warm <= 0:
+            sch = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=total, eta_min=float(args.min_lr))
+            return sch, "epoch"
+
+        # Warmup then cosine.
+        warmup = torch.optim.lr_scheduler.LambdaLR(
+            optim,
+            lr_lambda=lambda e: (e + 1) / max(1, warm),
+        )
+        cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optim,
+            T_max=max(1, total - warm),
+            eta_min=float(args.min_lr),
+        )
+        sch = torch.optim.lr_scheduler.SequentialLR(optim, schedulers=[warmup, cosine], milestones=[warm])
+        return sch, "epoch"
+
+    if args.sched == "onecycle":
+        sch = torch.optim.lr_scheduler.OneCycleLR(
+            optim,
+            max_lr=float(args.lr),
+            total_steps=int(args.epochs) * int(steps_per_epoch),
+            pct_start=float(args.onecycle_pct_start),
+            anneal_strategy="cos",
+            div_factor=float(args.onecycle_div_factor),
+            final_div_factor=float(args.onecycle_final_div_factor),
+        )
+        return sch, "batch"
+
+    if args.sched == "step":
+        sch = torch.optim.lr_scheduler.StepLR(
+            optim,
+            step_size=int(args.step_size),
+            gamma=float(args.gamma),
+        )
+        return sch, "epoch"
+
+    if args.sched == "plateau":
+        sch = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optim,
+            mode="max",
+            factor=float(args.plateau_factor),
+            patience=int(args.plateau_patience),
+            min_lr=float(args.min_lr),
+            verbose=False,
+        )
+        return sch, "epoch_metric"
+
+    raise ValueError(f"Unknown --sched {args.sched!r}")
+
+
 def main() -> None:
     warnings.filterwarnings("ignore", category=UserWarning)
     warnings.filterwarnings("ignore", category=FutureWarning)
@@ -263,6 +329,16 @@ def main() -> None:
     ap.add_argument("--model_dir", default=None)
     ap.add_argument("--log_vram", action="store_true")
     ap.add_argument("--pos_weight", default="none", help="BCE pos_weight: none|auto|<float>")
+    ap.add_argument("--sched", choices=["none", "cosine", "onecycle", "step", "plateau"], default="none")
+    ap.add_argument("--warmup_epochs", type=int, default=0, help="cosine warmup epochs (epoch-based warmup)")
+    ap.add_argument("--min_lr", type=float, default=1e-5)
+    ap.add_argument("--onecycle_pct_start", type=float, default=0.1)
+    ap.add_argument("--onecycle_div_factor", type=float, default=10.0)
+    ap.add_argument("--onecycle_final_div_factor", type=float, default=100.0)
+    ap.add_argument("--step_size", type=int, default=30)
+    ap.add_argument("--gamma", type=float, default=0.5)
+    ap.add_argument("--plateau_factor", type=float, default=0.5)
+    ap.add_argument("--plateau_patience", type=int, default=10)
     args = ap.parse_args()
 
     proj = Path(__file__).resolve().parents[1]
@@ -304,6 +380,7 @@ def main() -> None:
     ).to(device)
 
     optim = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    scheduler, sched_mode = build_scheduler(args, optim, steps_per_epoch=len(train_loader))
 
     pos_weight = None
     if args.pos_weight != "none":
@@ -348,6 +425,8 @@ def main() -> None:
             loss = F.binary_cross_entropy_with_logits(logits, y, pos_weight=pos_weight)
             loss.backward()
             optim.step()
+            if scheduler is not None and sched_mode == "batch":
+                scheduler.step()
             total_loss += float(loss.item())
             steps += 1
 
@@ -364,7 +443,14 @@ def main() -> None:
             valid_roc = eval_split(model, valid_loader, evaluator, device)
             test_roc = eval_split(model, test_loader, evaluator, device)
 
+        if scheduler is not None and sched_mode == "epoch":
+            scheduler.step()
+        if scheduler is not None and sched_mode == "epoch_metric" and valid_roc is not None:
+            scheduler.step(valid_roc)
+
+        lr_now = float(optim.param_groups[0]["lr"])
         line = f"Epoch {epoch}/{args.epochs} | loss={avg_loss:.4f} | {dt:.1f}s"
+        line += f" | lr={lr_now:.2e}"
         if vram_mb is not None:
             line += f" | vram_mb={vram_mb}"
         if valid_roc is not None:
